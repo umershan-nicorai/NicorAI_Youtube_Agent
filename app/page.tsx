@@ -30,8 +30,136 @@ export default function Home() {
   const [isGeneratingMedia, setIsGeneratingMedia] = useState(false)
   const [mediaGenerated, setMediaGenerated] = useState(false)
   const [generatedMedia, setGeneratedMedia] = useState<any>(null)
+  const [regeneratingAsset, setRegeneratingAsset] = useState<{ type: 'images' | 'audio' | 'videos', index: number } | null>(null)
   const mediaRefs = useRef<(HTMLAudioElement | HTMLVideoElement)[]>([])
   
+  const extractGoogleDriveFileId = (url: string) => {
+    if (!url) return null;
+    
+    // Handle direct Google Drive "uc" URLs
+    if (url.includes('drive.google.com/uc?id=')) {
+      const idMatch = url.match(/id=([a-zA-Z0-9_-]+)/);
+      return idMatch ? idMatch[1] : null;
+    }
+    
+    // Handle Google Drive file URLs
+    if (url.includes('drive.google.com/file/d/')) {
+      const fileIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+      return fileIdMatch ? fileIdMatch[1] : null;
+    }
+    
+    // Handle other formats
+    const fileIdMatch = url.match(/id=([a-zA-Z0-9_-]+)/);
+    return fileIdMatch ? fileIdMatch[1] : null;
+  };
+
+  const getProxyUrl = (fileId: string, type: string) => {
+    if (!fileId) return null;
+    // Use our own API route to proxy the request
+    return `/api/media-proxy?fileId=${fileId}&type=${type}`;
+  };
+
+  const handleRegenerateMedia = async (type: 'images' | 'audio' | 'videos', index: number) => {
+    setRegeneratingAsset({ type, index });
+    const asset = generatedMedia[type][index];
+    
+    console.log('Current asset being regenerated:', {
+      type,
+      index,
+      asset,
+      originalUrl: asset.originalUrl,
+      src: asset.src,
+      name: asset.name,
+      alt: asset.alt,
+      fileId: asset.fileId
+    });
+    
+    // Map the frontend asset type to backend expected type
+    const getBackendType = (frontendType: string) => {
+      switch (frontendType) {
+        case 'images':
+          return 'image';
+        case 'videos':
+          return 'video';
+        case 'audio':
+          return 'audio';
+        default:
+          return frontendType;
+      }
+    };
+
+    const payload = {
+      name: asset.name || asset.alt,
+      type: getBackendType(type),
+      originalUrl: asset.originalUrl || asset.src, // Include original URL if available
+      fileId: asset.fileId // Include file ID if available
+    };
+    
+    console.log('Payload being sent to backend:', payload);
+
+    try {
+      const response = await fetch('/api/media-regenerate', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to regenerate media asset');
+      }
+
+      const data = await response.json();
+      console.log('Response received from backend:', data);
+      
+      if (data && data.file) {
+        console.log('New file data:', {
+          url: data.file.url,
+          name: data.file.name,
+          type: data.file.type
+        });
+        
+        setGeneratedMedia((prevMedia: any) => {
+          const newMedia = { ...prevMedia };
+          const fileId = extractGoogleDriveFileId(data.file.url);
+          const newAsset = { 
+            ...asset,
+            src: fileId ? getProxyUrl(fileId, type) : data.file.url,
+            originalUrl: data.file.url,
+            name: data.file.name,
+            fileId: fileId
+          };
+          
+          if (type === 'images') {
+            newMedia.images = newMedia.images.map((item: any, i: number) => 
+              i === index ? { ...newAsset, alt: data.file.name } : item
+            );
+          } else if (type === 'audio') {
+            newMedia.audio = newMedia.audio.map((item: any, i: number) => 
+              i === index ? newAsset : item
+            );
+          } else if (type === 'videos') {
+            newMedia.videos = newMedia.videos.map((item: any, i: number) => 
+              i === index ? newAsset : item
+            );
+          }
+          console.log('Updated media state:', newMedia);
+          return newMedia;
+        });
+      } else {
+        console.warn('Regeneration response missing file data:', data);
+        alert('Regeneration successful but new asset data is missing.');
+      }
+
+    } catch (error) {
+      console.error('Error regenerating media asset:', error);
+      alert('Error regenerating media asset. Please try again.');
+    } finally {
+      setRegeneratingAsset(null);
+    }
+  };
+
   useEffect(() => {
     const handlePlay = (event: Event) => {
       mediaRefs.current.forEach(media => {
@@ -178,33 +306,6 @@ export default function Home() {
           console.log("Files found:", responseFiles.length);
           console.log("Sample file:", responseFiles[0]);
 
-          const extractGoogleDriveFileId = (url: string) => {
-            if (!url) return null;
-            
-            // Handle direct Google Drive "uc" URLs
-            if (url.includes('drive.google.com/uc?id=')) {
-              const idMatch = url.match(/id=([a-zA-Z0-9_-]+)/);
-              return idMatch ? idMatch[1] : null;
-            }
-            
-            // Handle Google Drive file URLs
-            if (url.includes('drive.google.com/file/d/')) {
-              const fileIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-              return fileIdMatch ? fileIdMatch[1] : null;
-            }
-            
-            // Handle other formats
-            const fileIdMatch = url.match(/id=([a-zA-Z0-9_-]+)/);
-            return fileIdMatch ? fileIdMatch[1] : null;
-          };
-
-          // Use our own proxy API route instead of direct Google Drive links
-          const getProxyUrl = (fileId: string, type: string) => {
-            if (!fileId) return null;
-            // Use our own API route to proxy the request
-            return `/api/media-proxy?fileId=${fileId}&type=${type}`;
-          };
-
           const newGeneratedMedia = {
             images: responseFiles.filter((file: any) => file && file.type === 'image').map((file: any) => {
               const fileId = extractGoogleDriveFileId(file.url);
@@ -265,26 +366,6 @@ export default function Home() {
     });
   };
 
-  // const handleApproveVideo = async () => {
-  //   setVideoApproval('approved')
-  //   await fetch('https://your-n8n-endpoint.com/webhook/approve-video', {
-  //     method: 'POST',
-  //     headers: { 'Content-Type': 'application/json' },
-  //     body: JSON.stringify({ videoUrl, status: 'approved' }),
-  //   })
-  //   alert('Video approved and sent for upload!')
-  // }
-
-  // const handleRejectVideo = async () => {
-  //   setVideoApproval('rejected')
-  //   await fetch('https://your-n8n-endpoint.com/webhook/reject-video', {
-  //     method: 'POST',
-  //     headers: { 'Content-Type': 'application/json' },
-  //     body: JSON.stringify({ videoUrl, status: 'rejected' }),
-  //   })
-  //   alert('Video rejected and sent for revision!')
-  // }
-
   const handleDownloadScript = () => {
     if (script) {
       const blob = new Blob([script], { type: 'text/plain' });
@@ -338,11 +419,28 @@ export default function Home() {
                     <div key={index} className="bg-gray-700 rounded-lg overflow-hidden shadow-md">
                       <img src={image.src} alt={image.alt} className="w-full h-48 object-cover" crossOrigin="anonymous" />
                       <div className="p-4">
-                        <p className="text-white font-semibold flex items-center">
+                        <p className="text-white font-semibold flex items-center gap-2">
                           {image.alt}
-                          <button onClick={() => {}} className="ml-2 focus:outline-none text-gray-400 hover:text-white">
-                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                              <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.76 0 3.32.73 4.45 1.95L14 12h6V6l-2.35 2.35z"></path>
+                          <button
+                            onClick={() => handleRegenerateMedia('images', index)}
+                            disabled={regeneratingAsset && regeneratingAsset.type === 'images' && regeneratingAsset.index === index}
+                            className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-600/10 hover:bg-red-600 transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed group"
+                            title="Regenerate image"
+                          >
+                            <svg 
+                              className={`w-4 h-4 text-red-500 group-hover:text-white transition-transform duration-300 ${
+                                regeneratingAsset && regeneratingAsset.type === 'images' && regeneratingAsset.index === index ? 'animate-spin' : ''
+                              }`}
+                              fill="none" 
+                              viewBox="0 0 24 24" 
+                              stroke="currentColor"
+                            >
+                              <path 
+                                strokeLinecap="round" 
+                                strokeLinejoin="round" 
+                                strokeWidth={2} 
+                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
+                              />
                             </svg>
                           </button>
                         </p>
@@ -374,11 +472,28 @@ export default function Home() {
                         }}
                       ></audio>
                       <div>
-                        <p className="text-white font-semibold flex items-center">
+                        <p className="text-white font-semibold flex items-center gap-2">
                           {audio.name}
-                          <button onClick={() => {}} className="ml-2 focus:outline-none text-gray-400 hover:text-white">
-                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                              <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.76 0 3.32.73 4.45 1.95L14 12h6V6l-2.35 2.35z"></path>
+                          <button
+                            onClick={() => handleRegenerateMedia('audio', index)}
+                            disabled={regeneratingAsset && regeneratingAsset.type === 'audio' && regeneratingAsset.index === index}
+                            className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-600/10 hover:bg-red-600 transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed group"
+                            title="Regenerate audio"
+                          >
+                            <svg 
+                              className={`w-4 h-4 text-red-500 group-hover:text-white transition-transform duration-300 ${
+                                regeneratingAsset && regeneratingAsset.type === 'audio' && regeneratingAsset.index === index ? 'animate-spin' : ''
+                              }`}
+                              fill="none" 
+                              viewBox="0 0 24 24" 
+                              stroke="currentColor"
+                            >
+                              <path 
+                                strokeLinecap="round" 
+                                strokeLinejoin="round" 
+                                strokeWidth={2} 
+                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
+                              />
                             </svg>
                           </button>
                         </p>
@@ -424,11 +539,28 @@ export default function Home() {
                         ></video>
                       )}
                       <div className="mt-2">
-                        <p className="text-white font-semibold flex items-center">
+                        <p className="text-white font-semibold flex items-center gap-2">
                           {video.name}
-                          <button onClick={() => {}} className="ml-2 focus:outline-none text-gray-400 hover:text-white">
-                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                              <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.76 0 3.32.73 4.45 1.95L14 12h6V6l-2.35 2.35z"></path>
+                          <button
+                            onClick={() => handleRegenerateMedia('videos', index)}
+                            disabled={regeneratingAsset && regeneratingAsset.type === 'videos' && regeneratingAsset.index === index}
+                            className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-600/10 hover:bg-red-600 transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed group"
+                            title="Regenerate video"
+                          >
+                            <svg 
+                              className={`w-4 h-4 text-red-500 group-hover:text-white transition-transform duration-300 ${
+                                regeneratingAsset && regeneratingAsset.type === 'videos' && regeneratingAsset.index === index ? 'animate-spin' : ''
+                              }`}
+                              fill="none" 
+                              viewBox="0 0 24 24" 
+                              stroke="currentColor"
+                            >
+                              <path 
+                                strokeLinecap="round" 
+                                strokeLinejoin="round" 
+                                strokeWidth={2} 
+                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
+                              />
                             </svg>
                           </button>
                         </p>
