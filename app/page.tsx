@@ -32,6 +32,7 @@ export default function Home() {
   const [generatedMedia, setGeneratedMedia] = useState<any>(null)
   const [regeneratingAsset, setRegeneratingAsset] = useState<{ type: 'images' | 'audio' | 'videos', index: number } | null>(null)
   const mediaRefs = useRef<(HTMLAudioElement | HTMLVideoElement)[]>([])
+  const [isApprovingAssets, setIsApprovingAssets] = useState(false)
   
   const extractGoogleDriveFileId = (url: string) => {
     if (!url) return null;
@@ -380,6 +381,87 @@ export default function Home() {
     }
   };
 
+  const handleApproveAssets = async () => {
+    if (!generatedMedia || !script) {
+      alert('No media assets or script to approve');
+      return;
+    }
+
+    setIsApprovingAssets(true);
+    try {
+      // Format the media data properly
+      const formattedMedia = {
+        images: generatedMedia.images?.map((img: any) => ({
+          url: img.originalUrl || img.src,
+          name: img.name || img.alt || 'image',
+          type: 'image'
+        })).filter(img => img.url) || [],
+        audio: generatedMedia.audio?.map((audio: any) => ({
+          url: audio.originalUrl || audio.src,
+          name: audio.name || 'audio',
+          type: 'audio'
+        })).filter(audio => audio.url) || [],
+        videos: generatedMedia.videos?.map((video: any) => ({
+          url: video.originalUrl || video.src,
+          name: video.name || 'video',
+          type: 'video'
+        })).filter(video => video.url) || []
+      };
+
+      // Log the raw media data for debugging
+      console.log('Raw media data:', JSON.stringify(generatedMedia, null, 2));
+      console.log('Formatted media data:', JSON.stringify(formattedMedia, null, 2));
+
+      const payload = {
+        content: script,
+        media: formattedMedia,
+        responseId,
+        timestamp: responseTimestamp,
+        status: 'approved'
+      };
+
+      console.log('Full payload being sent:', JSON.stringify(payload, null, 2));
+
+      const response = await fetch('/api/approve-assets', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      // Log the raw response
+      console.log('Response status:', response.status);
+      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+
+      const responseText = await response.text();
+      console.log('Raw response text:', responseText);
+
+      let data;
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch (parseError) {
+        console.error('Error parsing response:', parseError);
+        throw new Error('Invalid response from server: ' + responseText);
+      }
+
+      if (!response.ok) {
+        const errorMessage = data.error || 'Failed to approve assets';
+        const details = data.details ? `: ${JSON.stringify(data.details)}` : '';
+        throw new Error(errorMessage + details);
+      }
+
+      console.log('Assets approved successfully:', data);
+      alert('Assets approved successfully!');
+    } catch (error) {
+      console.error('Error approving assets:', error);
+      alert(`Error approving assets: ${error.message}`);
+    } finally {
+      setIsApprovingAssets(false);
+    }
+  };
+
   return (
     <main className="min-h-[calc(100vh-64px)] flex flex-col items-center justify-center p-4">
       {isGeneratingMedia ? (
@@ -574,10 +656,13 @@ export default function Home() {
 
             <div className="text-center mt-8">
               <button
-                onClick={() => {}}
-                className="bg-green-600 text-white py-3 px-6 rounded-full hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 font-semibold text-lg transition-colors duration-200"
+                onClick={handleApproveAssets}
+                disabled={isApprovingAssets}
+                className={`bg-green-600 text-white py-3 px-6 rounded-full hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 font-semibold text-lg transition-colors duration-200 ${
+                  isApprovingAssets ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
               >
-                Approve Assets
+                {isApprovingAssets ? 'Approving...' : 'Approve Assets'}
               </button>
             </div>
           </div>
