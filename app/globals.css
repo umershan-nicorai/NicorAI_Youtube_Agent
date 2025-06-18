@@ -30,4 +30,40 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #6b7280; /* Lighter gray on hover */
+}
+
+@keyframes draw-checkmark {
+  0% {
+    stroke-dashoffset: 100;
+    opacity: 0;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+@keyframes fade-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-draw-checkmark {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  opacity: 0;
+  animation: draw-checkmark 0.8s ease-out forwards;
+  animation-delay: 1s;
+}
+
+.animate-circle {
+  opacity: 0;
+  animation: fade-in 0.3s ease-out forwards;
+  animation-delay: 1s;
 } 

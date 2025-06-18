@@ -33,6 +33,8 @@ export default function Home() {
   const [regeneratingAsset, setRegeneratingAsset] = useState<{ type: 'images' | 'audio' | 'videos', index: number } | null>(null)
   const mediaRefs = useRef<(HTMLAudioElement | HTMLVideoElement)[]>([])
   const [isApprovingAssets, setIsApprovingAssets] = useState(false)
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false)
+  const [successProgress, setSuccessProgress] = useState(0)
   
   const extractGoogleDriveFileId = (url: string) => {
     if (!url) return null;
@@ -181,6 +183,17 @@ export default function Home() {
     };
   }, [mediaGenerated]);
 
+  useEffect(() => {
+    if (showSuccessMessage) {
+      // Hide message after 3 seconds (1s delay + 0.8s animation + 1.2s display time)
+      const timeout = setTimeout(() => {
+        setShowSuccessMessage(false);
+      }, 3000);
+
+      return () => clearTimeout(timeout);
+    }
+  }, [showSuccessMessage]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
@@ -310,24 +323,36 @@ export default function Home() {
           const newGeneratedMedia = {
             images: responseFiles.filter((file: any) => file && file.type === 'image').map((file: any) => {
               const fileId = extractGoogleDriveFileId(file.url);
-              // Use our proxy API
+              // Store both proxy URL and original URL
               const srcUrl = fileId ? getProxyUrl(fileId, 'image') : file.url;
-              return { src: srcUrl, alt: file.name, liked: false, name: file.name };
+              return { 
+                src: srcUrl, 
+                originalUrl: file.url,
+                fileId: fileId,
+                alt: file.name, 
+                name: file.name, 
+                liked: false 
+              };
             }),
             audio: responseFiles.filter((file: any) => file && file.type === 'music').map((file: any) => {
               const fileId = extractGoogleDriveFileId(file.url);
-              // Use our proxy API for audio
+              // Store both proxy URL and original URL
               const srcUrl = fileId ? getProxyUrl(fileId, 'audio') : file.url;
-              return { src: srcUrl, name: file.name, liked: false };
+              return { 
+                src: srcUrl, 
+                originalUrl: file.url,
+                fileId: fileId,
+                name: file.name, 
+                liked: false 
+              };
             }),
             videos: responseFiles.filter((file: any) => file && file.type === 'visual').map((file: any) => {
               const fileId = extractGoogleDriveFileId(file.url);
-              // For videos, store both the proxy URL and the original URL
+              // Store both proxy URL and original URL
               const srcUrl = fileId ? getProxyUrl(fileId, 'video') : file.url;
-              const originalUrl = file.url;
               return { 
                 src: srcUrl, 
-                originalUrl: originalUrl,
+                originalUrl: file.url,
                 fileId: fileId,
                 name: file.name, 
                 liked: false 
@@ -389,36 +414,63 @@ export default function Home() {
 
     setIsApprovingAssets(true);
     try {
-      // Format the media data properly
-      const formattedMedia = {
-        images: generatedMedia.images?.map((img: any) => ({
-          url: img.originalUrl || img.src,
-          name: img.name || img.alt || 'image',
-          type: 'image'
-        })).filter(img => img.url) || [],
-        audio: generatedMedia.audio?.map((audio: any) => ({
-          url: audio.originalUrl || audio.src,
-          name: audio.name || 'audio',
-          type: 'audio'
-        })).filter(audio => audio.url) || [],
-        videos: generatedMedia.videos?.map((video: any) => ({
-          url: video.originalUrl || video.src,
-          name: video.name || 'video',
-          type: 'video'
-        })).filter(video => video.url) || []
-      };
+      // Format the media data into a single array
+      const allMedia = [
+        ...generatedMedia.images?.map((img: any, index: number) => ({
+          asset: img,
+          type: 'image',
+          originalIndex: index
+        })) || [],
+        ...generatedMedia.audio?.map((audio: any, index: number) => ({
+          asset: audio,
+          type: 'music', // Using 'music' instead of 'audio' to match the desired format
+          originalIndex: index + (generatedMedia.images?.length || 0)
+        })) || [],
+        ...generatedMedia.videos?.map((video: any, index: number) => ({
+          asset: video,
+          type: 'visual', // Using 'visual' instead of 'video' to match the desired format
+          originalIndex: index + (generatedMedia.images?.length || 0) + (generatedMedia.audio?.length || 0)
+        })) || []
+      ];
+
+      const totalItems = allMedia.length;
+
+      // Transform into the desired format
+      const formattedMedia = allMedia
+        .map((item: any, index: number) => {
+          if (!item.asset.originalUrl) {
+            console.warn(`Asset missing originalUrl:`, item.asset);
+            return null;
+          }
+          return {
+            id: index + 1,
+            type: item.type,
+            description: item.asset.name || item.asset.alt || `${item.type} content`,
+            originalIndex: item.originalIndex,
+            totalItems: totalItems,
+            url: item.asset.originalUrl // Keep the URL for backend processing
+          };
+        })
+        .filter(Boolean);
 
       // Log the raw media data for debugging
       console.log('Raw media data:', JSON.stringify(generatedMedia, null, 2));
       console.log('Formatted media data:', JSON.stringify(formattedMedia, null, 2));
 
+      // Transform the media array into the expected format
       const payload = {
         content: script,
-        media: formattedMedia,
+        media: formattedMedia, // This is now a flat array of media items
         responseId,
         timestamp: responseTimestamp,
-        status: 'approved'
+        status: 'approved',
+        topic: formData.topic,
+        tone: formData.tone,
+        genre: formData.genre
       };
+
+      // Log the final payload for verification
+      console.log('Final payload structure:', JSON.stringify(payload, null, 2));
 
       console.log('Full payload being sent:', JSON.stringify(payload, null, 2));
 
@@ -453,7 +505,7 @@ export default function Home() {
       }
 
       console.log('Assets approved successfully:', data);
-      alert('Assets approved successfully!');
+      setShowSuccessMessage(true);
     } catch (error) {
       console.error('Error approving assets:', error);
       alert(`Error approving assets: ${error.message}`);
@@ -464,6 +516,41 @@ export default function Home() {
 
   return (
     <main className="min-h-[calc(100vh-64px)] flex flex-col items-center justify-center p-4">
+      {/* Success Message Overlay */}
+      {showSuccessMessage && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 bg-gray-900">
+          <div className="w-full max-w-md p-8 flex flex-col items-center">
+            {/* Animated checkmark icon */}
+            <div className="relative w-16 h-16 mb-6">
+              <div className="absolute inset-0 bg-red-500/10 rounded-full animate-circle"></div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <svg 
+                  className="w-8 h-8 text-red-500" 
+                  viewBox="0 0 24 24" 
+                  fill="none" 
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M5 13l4 4L19 7"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="animate-draw-checkmark"
+                  />
+                </svg>
+              </div>
+            </div>
+            
+            {/* Title */}
+            <h2 className="text-2xl font-bold text-white mb-2">Assets Approved!</h2>
+            
+            {/* Status message */}
+            <p className="text-gray-400">Your assets have been approved successfully</p>
+          </div>
+        </div>
+      )}
+
       {isGeneratingMedia ? (
         <div className="flex flex-col items-center justify-center h-[500px] w-full max-w-2xl bg-gray-800 rounded-xl shadow-lg p-8 border border-gray-700 text-white">
           <div className="w-24 h-24 relative mb-6">

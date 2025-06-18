@@ -23,17 +23,16 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create the payload for the webhook
+    // Create the payload for the webhook - keep the media array as is
     const payload = {
       content: data.content,
-      media: {
-        images: data.media.images || [],
-        audio: data.media.audio || [],
-        videos: data.media.videos || []
-      },
+      media: data.media, // Keep the flat array structure
       responseId: data.responseId,
       timestamp: data.timestamp,
-      status: 'approved'
+      status: 'approved',
+      topic: data.topic,
+      tone: data.tone,
+      genre: data.genre
     };
 
     console.log('Sending webhook payload:', payload);
