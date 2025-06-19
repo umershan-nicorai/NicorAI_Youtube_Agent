@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import ReactMarkdown from 'react-markdown'
+import TopicSection from './components/topic_section'
+import ScriptSection from './components/script_section'
+import AssetSection from './components/asset_section'
 
 interface FormData {
   topic: string
@@ -35,6 +37,7 @@ export default function Home() {
   const [isApprovingAssets, setIsApprovingAssets] = useState(false)
   const [showSuccessMessage, setShowSuccessMessage] = useState(false)
   const [successProgress, setSuccessProgress] = useState(0)
+  const [loadingProgress, setLoadingProgress] = useState(0)
   
   const extractGoogleDriveFileId = (url: string) => {
     if (!url) return null;
@@ -59,7 +62,16 @@ export default function Home() {
   const getProxyUrl = (fileId: string, type: string) => {
     if (!fileId) return null;
     // Use our own API route to proxy the request
+    if (type === 'audio') {
+      return `/api/audio-proxy?fileId=${fileId}`; // Use dedicated audio proxy for audio files
+    }
     return `/api/media-proxy?fileId=${fileId}&type=${type}`;
+  };
+
+  // Add a utility function to create a direct download link for Google Drive files
+  const getDirectDownloadUrl = (fileId: string) => {
+    if (!fileId) return null;
+    return `https://docs.google.com/uc?export=download&id=${fileId}`;
   };
 
   const handleRegenerateMedia = async (type: 'images' | 'audio' | 'videos', index: number) => {
@@ -101,19 +113,37 @@ export default function Home() {
     console.log('Payload being sent to backend:', payload);
 
     try {
+      // Show a loading state
+      setRegeneratingAsset({ type, index });
+      
       const response = await fetch('/api/media-regenerate', {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
         body: JSON.stringify(payload),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to regenerate media asset');
+      // Get the response text first for better error handling
+      const responseText = await response.text();
+      console.log('Raw response text:', responseText);
+      
+      // Try to parse the response as JSON
+      let data;
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch (parseError) {
+        console.error('Error parsing response:', parseError);
+        throw new Error('Invalid response from server: ' + responseText);
       }
 
-      const data = await response.json();
+      if (!response.ok) {
+        const errorMessage = data.error || 'Failed to regenerate media asset';
+        const details = data.details ? `: ${data.details}` : '';
+        throw new Error(errorMessage + details);
+      }
+
       console.log('Response received from backend:', data);
       
       if (data && data.file) {
@@ -130,6 +160,7 @@ export default function Home() {
             ...asset,
             src: fileId ? getProxyUrl(fileId, type) : data.file.url,
             originalUrl: data.file.url,
+            directDownloadUrl: fileId ? getDirectDownloadUrl(fileId) : null,
             name: data.file.name,
             fileId: fileId
           };
@@ -152,34 +183,37 @@ export default function Home() {
         });
       } else {
         console.warn('Regeneration response missing file data:', data);
-        alert('Regeneration successful but new asset data is missing.');
+        alert('Regeneration successful but new asset data is missing. Please check the console for details.');
       }
 
     } catch (error) {
       console.error('Error regenerating media asset:', error);
-      alert('Error regenerating media asset. Please try again.');
+      
+      // Show a more user-friendly error message
+      const errorMessage = error.message || 'Unknown error occurred';
+      alert(`Error regenerating media asset: ${errorMessage}. Please try again or check the console for details.`);
     } finally {
       setRegeneratingAsset(null);
     }
   };
 
-  useEffect(() => {
-    const handlePlay = (event: Event) => {
-      mediaRefs.current.forEach(media => {
-        if (media !== event.target && !media.paused) {
-          media.pause();
-        }
-      });
-    };
-
+  // Create a global play handler function that will be used for all media elements
+  const handleMediaPlay = (event: React.SyntheticEvent<HTMLAudioElement | HTMLVideoElement>) => {
+    // Get the current target that started playing
+    const currentTarget = event.currentTarget;
+    
+    // Pause all other media elements
     mediaRefs.current.forEach(media => {
-      media.addEventListener('play', handlePlay);
+      if (media !== currentTarget && !media.paused) {
+        media.pause();
+      }
     });
-
+  };
+  
+  // Clear mediaRefs when component unmounts or when media is regenerated
+  useEffect(() => {
     return () => {
-      mediaRefs.current.forEach(media => {
-        media.removeEventListener('play', handlePlay);
-      });
+      mediaRefs.current = [];
     };
   }, [mediaGenerated]);
 
@@ -239,6 +273,7 @@ export default function Home() {
   const handleApproveOrRefineScript = async () => {
     try {
       setIsProcessing(true)
+      setLoadingProgress(0)
       const status = feedback.trim() ? 'refine' : 'approved';
       const payload = {
         responseId,
@@ -250,22 +285,32 @@ export default function Home() {
         status,
         timestamp: responseTimestamp,
       };
+
+      if (status === 'approved') {
+        setIsGeneratingMedia(true);
+      }
+
+      setLoadingProgress(10)
       const response = await fetch('https://n8n.srv810314.hstgr.cloud/webhook/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      console.log("Fetch response:", response);
-      console.log("Fetch response status:", response.status);
+      
+      setLoadingProgress(30)
+      
       if (!response.ok) throw new Error(status === 'refine' ? 'Failed to refine script' : 'Failed to approve script');
+      
       const data = await response.json();
-      // Ensure data is not null or undefined
+      
       if (!data) {
         console.error("Backend response data is null or undefined.");
         alert('Error processing script: Received empty or invalid response from backend.');
         setIsProcessing(false);
+        setIsGeneratingMedia(false);
         return;
       }
+
       console.log('Backend response data received by frontend:', data);
       console.log('Stringified backend data:', JSON.stringify(data, null, 2));
 
@@ -277,9 +322,8 @@ export default function Home() {
         setStatusMessage('Refined script updated!');
         setTimeout(() => setStatusMessage(''), 2000);
       } else {
-        // Script approved, now process and show media generation screen using data from n8n response
-        setIsGeneratingMedia(true);
         try {
+          setLoadingProgress(50)
           // Parse the response data which might be in different formats
           console.log("Processing media data...");
           let responseFiles = [];
@@ -323,12 +367,12 @@ export default function Home() {
           const newGeneratedMedia = {
             images: responseFiles.filter((file: any) => file && file.type === 'image').map((file: any) => {
               const fileId = extractGoogleDriveFileId(file.url);
-              // Store both proxy URL and original URL
               const srcUrl = fileId ? getProxyUrl(fileId, 'image') : file.url;
               return { 
                 src: srcUrl, 
                 originalUrl: file.url,
                 fileId: fileId,
+                directDownloadUrl: fileId ? getDirectDownloadUrl(fileId) : null,
                 alt: file.name, 
                 name: file.name, 
                 liked: false 
@@ -336,24 +380,24 @@ export default function Home() {
             }),
             audio: responseFiles.filter((file: any) => file && file.type === 'music').map((file: any) => {
               const fileId = extractGoogleDriveFileId(file.url);
-              // Store both proxy URL and original URL
               const srcUrl = fileId ? getProxyUrl(fileId, 'audio') : file.url;
               return { 
                 src: srcUrl, 
                 originalUrl: file.url,
                 fileId: fileId,
+                directDownloadUrl: fileId ? getDirectDownloadUrl(fileId) : null,
                 name: file.name, 
                 liked: false 
               };
             }),
             videos: responseFiles.filter((file: any) => file && file.type === 'visual').map((file: any) => {
               const fileId = extractGoogleDriveFileId(file.url);
-              // Store both proxy URL and original URL
               const srcUrl = fileId ? getProxyUrl(fileId, 'video') : file.url;
               return { 
                 src: srcUrl, 
                 originalUrl: file.url,
                 fileId: fileId,
+                directDownloadUrl: fileId ? getDirectDownloadUrl(fileId) : null,
                 name: file.name, 
                 liked: false 
               };
@@ -366,17 +410,62 @@ export default function Home() {
             videos: newGeneratedMedia.videos.length
           });
 
+          // Set the media data
           setGeneratedMedia(newGeneratedMedia);
           setMediaGenerated(true);
+
+          // Create a promise for each media asset to load
+          const loadPromises = [
+            ...newGeneratedMedia.images.map((img, index, array) => new Promise((resolve, reject) => {
+              const image = new Image();
+              image.onload = () => {
+                const progress = 50 + ((index + 1) / array.length) * 16.67; // 16.67 is roughly 50/3 to split remaining 50% among 3 types
+                setLoadingProgress(progress);
+                resolve(true);
+              };
+              image.onerror = reject;
+              image.src = img.src;
+            })),
+            ...newGeneratedMedia.audio.map((audio, index, array) => new Promise((resolve) => {
+              const audioEl = new Audio();
+              audioEl.onloadeddata = () => {
+                const progress = 66.67 + ((index + 1) / array.length) * 16.67;
+                setLoadingProgress(progress);
+                resolve(true);
+              };
+              audioEl.onerror = () => resolve(false);
+              audioEl.src = audio.src;
+            })),
+            ...newGeneratedMedia.videos.map((video, index, array) => new Promise((resolve) => {
+              const videoEl = document.createElement('video');
+              videoEl.onloadeddata = () => {
+                const progress = 83.34 + ((index + 1) / array.length) * 16.66;
+                setLoadingProgress(progress);
+                resolve(true);
+              };
+              videoEl.onerror = () => resolve(false);
+              videoEl.src = video.src;
+            }))
+          ];
+
+          await Promise.allSettled(loadPromises);
+          setLoadingProgress(100)
+
         } catch (mediaError) {
-          alert('Error processing media assets. Please try again.');
           console.error('Media processing error:', mediaError);
+          alert('Error processing media assets. Please try again.');
         } finally {
-          setIsGeneratingMedia(false);
+          setTimeout(() => {
+            setIsGeneratingMedia(false);
+            setLoadingProgress(0);
+          }, 500); // Small delay to show 100% completion
         }
       }
     } catch (error) {
+      console.error('Error processing script:', error);
       alert('Error processing script. Please try again.');
+      setIsGeneratingMedia(false);
+      setLoadingProgress(0);
     } finally {
       setIsProcessing(false)
     }
@@ -516,434 +605,49 @@ export default function Home() {
 
   return (
     <main className="min-h-[calc(100vh-64px)] flex flex-col items-center justify-center p-4">
-      {/* Success Message Overlay */}
-      {showSuccessMessage && (
-        <div className="fixed inset-0 flex items-center justify-center z-50 bg-gray-900">
-          <div className="w-full max-w-md p-8 flex flex-col items-center">
-            {/* Animated checkmark icon */}
-            <div className="relative w-16 h-16 mb-6">
-              <div className="absolute inset-0 bg-red-500/10 rounded-full animate-circle"></div>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <svg 
-                  className="w-8 h-8 text-red-500" 
-                  viewBox="0 0 24 24" 
-                  fill="none" 
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path
-                    d="M5 13l4 4L19 7"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="animate-draw-checkmark"
-                  />
-                </svg>
-              </div>
-            </div>
-            
-            {/* Title */}
-            <h2 className="text-2xl font-bold text-white mb-2">Assets Approved!</h2>
-            
-            {/* Status message */}
-            <p className="text-gray-400">Your assets have been approved successfully</p>
-          </div>
-        </div>
-      )}
-
-      {isGeneratingMedia ? (
-        <div className="flex flex-col items-center justify-center h-[500px] w-full max-w-2xl bg-gray-800 rounded-xl shadow-lg p-8 border border-gray-700 text-white">
-          <div className="w-24 h-24 relative mb-6">
-            {/* Placeholder for spinning icon */}
-            <div className="absolute inset-0 rounded-full border-4 border-t-4 border-red-500 border-opacity-50 animate-spin"></div>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <svg className="w-12 h-12 text-red-500" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fillRule="evenodd" d="M9.243 3.03a1 1 0 01.558 1.155l-1.5 5a1 1 0 01-1.897-.046l-2.5-5A1 1 0 014.243 3.03zm4.243 0a1 1 0 01.558 1.155l-1.5 5a1 1 0 01-1.897-.046l-2.5-5A1 1 0 018.243 3.03zm-1.03 8.92a1 1 0 011.897.046l2.5 5a1 1 0 01-1.794.9l-1.5-5a1 1 0 01-.558-1.155zm-4.243 0a1 1 0 011.897.046l2.5 5a1 1 0 01-1.794.9l-1.5-5a1 1 0 01-.558-1.155z" clipRule="evenodd"></path></svg>
-            </div>
-          </div>
-          <h2 className="text-2xl font-bold mb-4">Creating Your Media</h2>
-          <p className="text-gray-400 mb-6">Analyzing your Script...</p>
-          <div className="w-full bg-gray-700 rounded-full h-2.5 mb-4">
-            <div className="bg-red-500 h-2.5 rounded-full animate-pulse" style={{ width: '52%' }}></div>
-          </div>
-          <p className="text-gray-400 text-sm">52% complete</p>
-        </div>
-      ) : mediaGenerated ? (
-        <div className="w-full max-w-7xl flex flex-col items-center justify-center p-4">
-          <div className="bg-gray-800 rounded-xl shadow-lg p-8 border border-gray-700 w-full">
-            <button
-              onClick={() => setMediaGenerated(false)} // Go back to script view
-              className="mb-6 text-gray-400 hover:text-white flex items-center"
-            >
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
-              Generate New Media
-            </button>
-            <h2 className="text-2xl font-bold text-white mb-4">Assets from the script</h2>
-            
-            {/* Images section */}
-            {generatedMedia.images && generatedMedia.images.length > 0 && (
-              <div className="mb-8">
-                <h3 className="text-xl font-bold text-white mb-4">Images <span className="text-gray-400 text-sm">({generatedMedia.images.length})</span></h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {generatedMedia.images.map((image: any, index: number) => (
-                    <div key={index} className="bg-gray-700 rounded-lg overflow-hidden shadow-md">
-                      <img src={image.src} alt={image.alt} className="w-full h-48 object-cover" crossOrigin="anonymous" />
-                      <div className="p-4">
-                        <p className="text-white font-semibold flex items-center gap-2">
-                          {image.alt}
-                          <button
-                            onClick={() => handleRegenerateMedia('images', index)}
-                            disabled={regeneratingAsset && regeneratingAsset.type === 'images' && regeneratingAsset.index === index}
-                            className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-600/10 hover:bg-red-600 transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed group"
-                            title="Regenerate image"
-                          >
-                            <svg 
-                              className={`w-4 h-4 text-red-500 group-hover:text-white transition-transform duration-300 ${
-                                regeneratingAsset && regeneratingAsset.type === 'images' && regeneratingAsset.index === index ? 'animate-spin' : ''
-                              }`}
-                              fill="none" 
-                              viewBox="0 0 24 24" 
-                              stroke="currentColor"
-                            >
-                              <path 
-                                strokeLinecap="round" 
-                                strokeLinejoin="round" 
-                                strokeWidth={2} 
-                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
-                              />
-                            </svg>
-                          </button>
-                        </p>
-                        <p className="text-gray-400 text-sm mt-1">{image.date}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Audio section */}
-            {generatedMedia.audio && generatedMedia.audio.length > 0 && (
-              <div className="mb-8">
-                <h3 className="text-xl font-bold text-white mb-4">Generated Audio <span className="text-gray-400 text-sm">({generatedMedia.audio.length})</span></h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {generatedMedia.audio.map((audio: any, index: number) => (
-                    <div key={index} className="bg-gray-700 rounded-lg p-4 flex flex-col items-start">
-                      <audio
-                        controls
-                        src={audio.src}
-                        className="w-full mb-2"
-                        crossOrigin="anonymous"
-                        preload="metadata"
-                        ref={el => {
-                          if (el && !mediaRefs.current.includes(el)) {
-                            mediaRefs.current.push(el);
-                          }
-                        }}
-                      ></audio>
-                      <div>
-                        <p className="text-white font-semibold flex items-center gap-2">
-                          {audio.name}
-                          <button
-                            onClick={() => handleRegenerateMedia('audio', index)}
-                            disabled={regeneratingAsset && regeneratingAsset.type === 'audio' && regeneratingAsset.index === index}
-                            className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-600/10 hover:bg-red-600 transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed group"
-                            title="Regenerate audio"
-                          >
-                            <svg 
-                              className={`w-4 h-4 text-red-500 group-hover:text-white transition-transform duration-300 ${
-                                regeneratingAsset && regeneratingAsset.type === 'audio' && regeneratingAsset.index === index ? 'animate-spin' : ''
-                              }`}
-                              fill="none" 
-                              viewBox="0 0 24 24" 
-                              stroke="currentColor"
-                            >
-                              <path 
-                                strokeLinecap="round" 
-                                strokeLinejoin="round" 
-                                strokeWidth={2} 
-                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
-                              />
-                            </svg>
-                          </button>
-                        </p>
-                        <p className="text-gray-400 text-sm mt-1">{audio.date}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Videos section */}
-            {generatedMedia.videos && generatedMedia.videos.length > 0 && (
-              <div className="mb-8">
-                <h3 className="text-xl font-bold text-white mb-4">Generated Videos <span className="text-gray-400 text-sm">({generatedMedia.videos.length})</span></h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {generatedMedia.videos.map((video: any, index: number) => (
-                    <div key={index} className="bg-gray-700 rounded-lg p-4">
-                      {/* Use iframe for Google Drive videos instead of video element */}
-                      {video.fileId ? (
-                        <div className="relative w-full pt-[56.25%]"> {/* 16:9 aspect ratio */}
-                          <iframe
-                            className="absolute top-0 left-0 w-full h-full rounded-md"
-                            src={`https://drive.google.com/file/d/${video.fileId}/preview`}
-                            title={video.name}
-                            allow="autoplay; encrypted-media"
-                            allowFullScreen
-                          ></iframe>
-                        </div>
-                      ) : (
-                        <video
-                          controls
-                          src={video.src}
-                          className="w-full rounded-md"
-                          crossOrigin="anonymous"
-                          preload="metadata"
-                          playsInline
-                          ref={el => {
-                            if (el && !mediaRefs.current.includes(el)) {
-                              mediaRefs.current.push(el);
-                            }
-                          }}
-                        ></video>
-                      )}
-                      <div className="mt-2">
-                        <p className="text-white font-semibold flex items-center gap-2">
-                          {video.name}
-                          <button
-                            onClick={() => handleRegenerateMedia('videos', index)}
-                            disabled={regeneratingAsset && regeneratingAsset.type === 'videos' && regeneratingAsset.index === index}
-                            className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-600/10 hover:bg-red-600 transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed group"
-                            title="Regenerate video"
-                          >
-                            <svg 
-                              className={`w-4 h-4 text-red-500 group-hover:text-white transition-transform duration-300 ${
-                                regeneratingAsset && regeneratingAsset.type === 'videos' && regeneratingAsset.index === index ? 'animate-spin' : ''
-                              }`}
-                              fill="none" 
-                              viewBox="0 0 24 24" 
-                              stroke="currentColor"
-                            >
-                              <path 
-                                strokeLinecap="round" 
-                                strokeLinejoin="round" 
-                                strokeWidth={2} 
-                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
-                              />
-                            </svg>
-                          </button>
-                        </p>
-                        <p className="text-gray-400 text-sm mt-1">{video.date}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="text-center mt-8">
-              <button
-                onClick={handleApproveAssets}
-                disabled={isApprovingAssets}
-                className={`bg-green-600 text-white py-3 px-6 rounded-full hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 font-semibold text-lg transition-colors duration-200 ${
-                  isApprovingAssets ? 'opacity-50 cursor-not-allowed' : ''
-                }`}
-              >
-                {isApprovingAssets ? 'Approving...' : 'Approve Assets'}
-              </button>
-            </div>
-          </div>
-        </div>
+      {mediaGenerated ? (
+        <AssetSection 
+          generatedMedia={generatedMedia}
+          regeneratingAsset={regeneratingAsset}
+          isApprovingAssets={isApprovingAssets}
+          showSuccessMessage={showSuccessMessage}
+          mediaRefs={mediaRefs}
+          handleRegenerateMedia={handleRegenerateMedia}
+          handleMediaPlay={handleMediaPlay}
+          handleApproveAssets={handleApproveAssets}
+          setMediaGenerated={setMediaGenerated}
+        />
       ) : !hasScript ? (
-        <div className="w-full max-w-2xl bg-gray-800 rounded-xl shadow-lg p-8 border border-gray-700">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-white mb-2">Create Your YouTube Script</h1>
-            <p className="text-gray-400">Generate engaging, professional scripts for your YouTube videos</p>
-          </div>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label htmlFor="topic" className="block text-sm font-medium text-gray-300 mb-1">Video Topic <span className="text-red-500">*</span></label>
-              <input
-                type="text"
-                id="topic"
-                value={formData.topic}
-                onChange={(e) => setFormData({ ...formData, topic: e.target.value })}
-                className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-700 text-white shadow-sm focus:border-red-500 focus:ring-red-500 px-3 py-2"
-                required
-              />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="tone" className="block text-sm font-medium text-gray-300 mb-1">Tone</label>
-                <select
-                  id="tone"
-                  value={formData.tone}
-                  onChange={(e) => setFormData({ ...formData, tone: e.target.value as FormData['tone'] })}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-700 text-white shadow-sm focus:border-red-500 focus:ring-red-500 px-3 py-2"
-                >
-                  <option value="Professional">Professional</option>
-                  <option value="Casual">Casual</option>
-                  <option value="Funny">Funny</option>
-                </select>
-              </div>
-              <div>
-                <label htmlFor="genre" className="block text-sm font-medium text-gray-300 mb-1">Content Type</label>
-                <select
-                  id="genre"
-                  value={formData.genre}
-                  onChange={(e) => setFormData({ ...formData, genre: e.target.value as FormData['genre'] })}
-                  className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-700 text-white shadow-sm focus:border-red-500 focus:ring-red-500 px-3 py-2"
-                >
-                  <option value="Educational">Educational</option>
-                  <option value="Entertainment">Entertainment</option>
-                  <option value="Tutorial">Tutorial</option>
-                </select>
-              </div>
-            </div>
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-red-600 text-white py-3 px-4 rounded-full hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 font-semibold text-lg transition-colors duration-200"
-            >
-              {isLoading ? 'Generating...' : 'Generate Script'}
-            </button>
-          </form>
-        </div>
+        <TopicSection 
+          formData={formData}
+          setFormData={setFormData}
+          handleSubmit={handleSubmit}
+          isLoading={isLoading}
+        />
       ) : (
-        <div className="flex flex-col lg:flex-row gap-6 w-full max-w-7xl">
-          <div className="flex-1 bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-700">
-            <h2 className="text-xl font-bold text-white mb-4 flex items-center justify-between">
-              <span className="flex items-center">
-                <svg className="w-6 h-6 mr-2 text-red-500" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fillRule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 0v12h8V4H6zm2 3a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1zm3 0a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd"></path></svg>
-                Your YouTube Script
-              </span>
-              {script && (
-                <button
-                  onClick={handleDownloadScript}
-                  className="bg-gray-600 text-white py-1 px-3 rounded-lg text-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-800"
-                  title="Download Script"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                  </svg>
-                </button>
-              )}
-            </h2>
-            {isEditing ? (
-              <>
-                <textarea
-                  value={editedScript}
-                  onChange={(e) => setEditedScript(e.target.value)}
-                  className="w-full h-96 p-4 border border-gray-600 rounded-lg shadow-sm focus:border-red-500 focus:ring-red-500 text-gray-100 bg-gray-900 resize-y"
-                />
-                <div className="mt-4 flex justify-end">
-                  <button
-                    onClick={handleSaveEdit}
-                    className="bg-red-600 text-white py-2 px-6 rounded-full hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 font-semibold transition-colors duration-200"
-                    type="button"
-                  >
-                    Save Edit
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="prose prose-invert max-w-none bg-gray-900 p-6 rounded-lg border border-gray-700 overflow-auto min-h-[250px] max-h-[410px]">
-                  <ReactMarkdown>{script}</ReactMarkdown>
-                </div>
-              </>
-            )}
-          </div>
-
-          <div className="lg:w-80 w-full space-y-6">
-            <div className="bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-700">
-              <h2 className="text-xl font-bold text-white mb-4 flex items-center">
-                <svg className="w-6 h-6 mr-2 text-blue-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fillRule="evenodd" d="M3 4a2 2 0 00-2 2v10a2 2 0 002 2h14a2 2 0 002-2V6a2 2 0 00-2-2H3zm0 2h14v10H3V6zm0 2H5a1 1 0 011 1v2a1 1 0 01-1 1H3v-4z" clipRule="evenodd"></path></svg>
-                Script Details
-              </h2>
-              <div className="space-y-2">
-                <p className="text-gray-300"><span className="font-semibold text-white">Topic:</span> {formData.topic}</p>
-                <p className="text-gray-300"><span className="font-semibold text-white">Tone:</span> {formData.tone}</p>
-                <p className="text-gray-300"><span className="font-semibold text-white">Type:</span> {formData.genre}</p>
-              </div>
-            </div>
-
-            {/* Feedback & Actions Section */}
-            {!isEditing && (
-              <div className="bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-700">
-                <h3 className="text-xl font-bold text-white mb-4">Feedback & Actions</h3>
-                <label htmlFor="feedback" className="block text-sm font-medium text-gray-300 mb-2">Feedback (Optional)</label>
-                <textarea
-                  id="feedback"
-                  value={feedback}
-                  onChange={e => {
-                    setFeedback(e.target.value);
-                  }}
-                  placeholder="Share your thoughts or suggestions..."
-                  className="w-full h-24 rounded-md border border-gray-600 bg-gray-700 text-white shadow-sm focus:border-red-500 focus:ring-red-500 px-3 py-2 resize-y"
-                />
-                <div className="flex flex-col sm:flex-row gap-4 mt-4">
-                  <button
-                    onClick={handleApproveOrRefineScript}
-                    className={`flex-1 py-2 px-4 rounded-lg font-semibold text-base transition-colors duration-200 ${feedback.trim() ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500' : 'bg-green-600 hover:bg-green-700 focus:ring-green-500'} text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800`}
-                    type="button"
-                    disabled={isProcessing}
-                  >
-                    {isProcessing ? 'Processing...' : feedback.trim() ? 'Refine Script' : 'Approve Script'}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setHasScript(false)
-                      setScript('')
-                      setEditedScript('')
-                      setFeedback('')
-                      setVideoUrl(null)
-                      setVideoApproval(null)
-                      setMediaGenerated(false) // Reset media generated state
-                    }}
-                    className="flex-1 bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-800 font-semibold text-base transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-gray-700"
-                    type="button"
-                    disabled={!!feedback.trim()}
-                  >
-                    Create New Script
-                  </button>
-                </div>
-                {statusMessage && (
-                  <div className="mt-4 text-green-500 font-semibold text-center">{statusMessage}</div>
-                )}
-              </div>
-            )}
-
-            {/* Video Preview Section */}
-            {videoUrl && !mediaGenerated && (
-              <div className="bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-700">
-                <h2 className="text-xl font-bold text-white mb-4 flex items-center">
-                  <svg className="w-6 h-6 mr-2 text-purple-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M2 6a2 2 0 012-2h12a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zm3.293-1.293a1 1 0 00-1.414 1.414L7.586 10l-3.707 3.707a1 1 0 101.414 1.414L9 11.414l3.707 3.707a1 1 0 001.414-1.414L10.414 10l3.707-3.707a1 1 0 00-1.414-1.414L9 8.586l-3.707-3.707z" clipRule="evenodd"></path></svg>
-                  Video Preview
-                </h2>
-                <video controls width="100%" src={videoUrl} className="rounded-lg shadow-md border border-gray-700" />
-                <div className="flex flex-col sm:flex-row gap-4 mt-4">
-                  <button
-                    onClick={() => {
-                      // handleApproveVideo()
-                    }}
-                    className="flex-1 py-2 px-4 rounded-full font-semibold text-lg transition-colors duration-200 bg-gray-700 text-green-400 border border-green-600 hover:bg-green-900 hover:text-white"
-                  >
-                    Approve Video
-                  </button>
-                  <button
-                    onClick={() => {
-                      // handleRejectVideo()
-                    }}
-                    className="flex-1 py-2 px-4 rounded-full font-semibold text-lg transition-colors duration-200 bg-gray-700 text-red-400 border border-red-600 hover:bg-red-900 hover:text-white"
-                  >
-                    Reject Video
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        <ScriptSection 
+          formData={formData}
+          script={script}
+          editedScript={editedScript}
+          setEditedScript={setEditedScript}
+          isEditing={isEditing}
+          setIsEditing={setIsEditing}
+          statusMessage={statusMessage}
+          videoUrl={videoUrl}
+          feedback={feedback}
+          setFeedback={setFeedback}
+          isProcessing={isProcessing}
+          isGeneratingMedia={isGeneratingMedia}
+          loadingProgress={loadingProgress}
+          handleSaveEdit={handleSaveEdit}
+          handleDownloadScript={handleDownloadScript}
+          handleApproveOrRefineScript={handleApproveOrRefineScript}
+          setHasScript={setHasScript}
+          setScript={setScript}
+          setVideoUrl={setVideoUrl}
+          setVideoApproval={setVideoApproval}
+          setMediaGenerated={setMediaGenerated}
+        />
       )}
     </main>
   );

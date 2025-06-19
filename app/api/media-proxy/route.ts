@@ -24,24 +24,27 @@ export async function GET(request: NextRequest) {
       url = `https://drive.google.com/uc?export=view&id=${fileId}`;
     } else if (type === 'video') {
       // For videos, use the direct download URL
-      url = `https://drive.google.com/uc?id=${fileId}`;
+      url = `https://drive.google.com/uc?export=download&id=${fileId}`;
     } else {
-      // For audio and other files
-      url = `https://drive.google.com/uc?id=${fileId}`;
+      // For audio, use the docs.google.com domain which has fewer restrictions
+      url = `https://docs.google.com/uc?export=download&id=${fileId}`;
     }
 
     console.log(`Proxying request for ${type} with ID: ${fileId}`);
     console.log(`Fetching from URL: ${url}`);
 
-    // Fetch the file from Google Drive
+    // Fetch the file from Google Drive with more robust headers
     const response = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         'Accept': '*/*',
         'Accept-Encoding': 'gzip, deflate, br',
         'Connection': 'keep-alive',
-        'Referer': 'https://drive.google.com/'
-      }
+        'Referer': 'https://drive.google.com/',
+        'Origin': 'https://drive.google.com'
+      },
+      // Add a longer timeout for larger files
+      signal: AbortSignal.timeout(30000) // 30 seconds
     });
 
     if (!response.ok) {
@@ -76,7 +79,12 @@ export async function GET(request: NextRequest) {
         'Content-Length': data.byteLength.toString(),
         'Cache-Control': 'public, max-age=86400', // Cache for 1 day
         'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, HEAD',
+        'Access-Control-Allow-Headers': 'Content-Type, Range',
         'Accept-Ranges': 'bytes',
+        'Cross-Origin-Resource-Policy': 'cross-origin',
+        'Cross-Origin-Embedder-Policy': 'credentialless',
+        'Cross-Origin-Opener-Policy': 'same-origin'
       },
     });
 
@@ -84,7 +92,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Error in media proxy:', error);
     return NextResponse.json(
-      { error: 'Failed to proxy media file' },
+      { error: 'Failed to proxy media file', details: error.message },
       { status: 500 }
     );
   }
