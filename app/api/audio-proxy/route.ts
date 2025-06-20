@@ -28,22 +28,41 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Instead of trying to proxy Google Drive, serve a local audio file
-    // This is a temporary solution to bypass CORS issues
-    // In a production environment, you would use a proper storage solution
+    // Create a Google Drive direct download URL
+    const googleDriveUrl = `https://docs.google.com/uc?export=download&id=${fileId}`;
     
-    // Use one of the local audio files in the public directory
-    const localAudioFiles = [
-      '/dont-talk.mp3'
-    ];
-    
-    // Select a file based on the fileId (just use the first one for now)
-    const selectedFile = localAudioFiles[0];
-    
-    console.log(`Using local audio file: ${selectedFile} instead of Google Drive file ID: ${fileId}`);
-    
-    // Return a redirect to the local file
-    return NextResponse.redirect(new URL(selectedFile, request.url));
+    try {
+      // Try to fetch the file from Google Drive
+      const response = await fetch(googleDriveUrl);
+      
+      if (!response.ok) {
+        console.error(`Error fetching from Google Drive: ${response.status}`);
+        return NextResponse.json(
+          { error: 'Failed to fetch audio from Google Drive', status: response.status },
+          { status: 502 }
+        );
+      }
+      
+      // Get the file content
+      const audioData = await response.arrayBuffer();
+      
+      // Return the audio file with appropriate headers
+      return new NextResponse(audioData, {
+        status: 200,
+        headers: {
+          'Content-Type': 'audio/mpeg', // Assuming MP3 format, adjust if needed
+          'Content-Disposition': 'inline',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=3600',
+        },
+      });
+    } catch (fetchError) {
+      console.error('Error fetching from Google Drive:', fetchError);
+      return NextResponse.json(
+        { error: 'Failed to fetch audio from Google Drive', details: fetchError.message },
+        { status: 502 }
+      );
+    }
     
   } catch (error) {
     console.error('Error in audio proxy:', error);

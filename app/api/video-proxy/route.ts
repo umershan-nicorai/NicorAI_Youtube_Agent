@@ -28,22 +28,41 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Use local video files from the public directory
-    // This is a temporary solution to bypass CORS issues
-    const localVideoFiles = [
-      '/circle.mp4',
-      '/spark.mp4',
-      '/ScreenRecording.mp4'
-    ];
+    // Create a Google Drive direct download URL
+    const googleDriveUrl = `https://docs.google.com/uc?export=download&id=${fileId}`;
     
-    // Select a file based on the fileId (use modulo to cycle through available files)
-    const fileIdNum = parseInt(fileId.replace(/\D/g, '').slice(-2) || '0', 10);
-    const selectedFile = localVideoFiles[fileIdNum % localVideoFiles.length];
-    
-    console.log(`Using local video file: ${selectedFile} instead of Google Drive file ID: ${fileId}`);
-    
-    // Return a redirect to the local file
-    return NextResponse.redirect(new URL(selectedFile, request.url));
+    try {
+      // Try to fetch the file from Google Drive
+      const response = await fetch(googleDriveUrl);
+      
+      if (!response.ok) {
+        console.error(`Error fetching from Google Drive: ${response.status}`);
+        return NextResponse.json(
+          { error: 'Failed to fetch video from Google Drive', status: response.status },
+          { status: 502 }
+        );
+      }
+      
+      // Get the file content
+      const videoData = await response.arrayBuffer();
+      
+      // Return the video file with appropriate headers
+      return new NextResponse(videoData, {
+        status: 200,
+        headers: {
+          'Content-Type': 'video/mp4', // Assuming MP4 format, adjust if needed
+          'Content-Disposition': 'inline',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=3600',
+        },
+      });
+    } catch (fetchError) {
+      console.error('Error fetching from Google Drive:', fetchError);
+      return NextResponse.json(
+        { error: 'Failed to fetch video from Google Drive', details: fetchError.message },
+        { status: 502 }
+      );
+    }
     
   } catch (error) {
     console.error('Error in video proxy:', error);

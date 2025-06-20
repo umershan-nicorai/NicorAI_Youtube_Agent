@@ -23,39 +23,21 @@ export default function AssetSection({
   handleApproveAssets,
   setMediaGenerated
 }: AssetSectionProps) {
-  // State to track if we're using fallback audio/video
-  const [usingFallbackAudio, setUsingFallbackAudio] = useState<boolean>(false);
-  const [usingFallbackVideo, setUsingFallbackVideo] = useState<boolean>(false);
+  // Remove fallback state variables since we don't want automatic fallbacks
   
-  // Effect to handle audio/video playback issues
-  useEffect(() => {
-    if (generatedMedia?.audio?.length > 0 || generatedMedia?.videos?.length > 0) {
-      // Set flags to use local files after a short delay
-      // This gives the original sources a chance to load first
-      const timeoutId = setTimeout(() => {
-        setUsingFallbackAudio(true);
-        setUsingFallbackVideo(true);
-      }, 2000);
-      
-      return () => clearTimeout(timeoutId);
-    }
-  }, [generatedMedia]);
-
-  // Function to get a local audio file path
+  // Remove the useEffect that was setting fallback flags
+  
+  // Keep these functions for error handling only, not for automatic fallbacks
   const getLocalAudioPath = (index: number) => {
-    // Use the local audio file in the public directory
     return '/dont-talk.mp3';
   };
   
-  // Function to get a local video file path
   const getLocalVideoPath = (index: number) => {
-    // Use local video files from the public directory
     const localVideoFiles = [
       '/circle.mp4',
       '/spark.mp4',
       '/ScreenRecording.mp4'
     ];
-    // Select a file based on the index (use modulo to cycle through available files)
     return localVideoFiles[index % localVideoFiles.length];
   };
 
@@ -165,7 +147,7 @@ export default function AssetSection({
                   )}
                   <audio
                     controls
-                    src={usingFallbackAudio ? getLocalAudioPath(index) : audio.directDownloadUrl || audio.src}
+                    src={audio.fileId ? `/api/audio-proxy?fileId=${audio.fileId}` : (audio.directDownloadUrl || audio.src)}
                     className="w-full mb-2"
                     crossOrigin="anonymous"
                     preload="auto"
@@ -176,20 +158,37 @@ export default function AssetSection({
                           mediaRefs.current.push(el);
                           
                           // Set the source directly using a different approach
-                          if (usingFallbackAudio) {
-                            el.src = getLocalAudioPath(index);
-                          } else if (audio.fileId) {
+                          if (audio.fileId) {
                             el.src = `/api/audio-proxy?fileId=${audio.fileId}`;
+                          } else if (audio.directDownloadUrl) {
+                            el.src = audio.directDownloadUrl;
+                          } else if (audio.src) {
+                            el.src = audio.src;
                           }
                         }
                       }
                     }}
                     onPlay={handleMediaPlay}
                     onError={(e) => {
-                      // If there's an error, switch to the local audio file
+                      // Log error but don't use fallback
+                      console.error('Error loading audio:', e);
                       const audioElement = e.currentTarget;
-                      audioElement.src = getLocalAudioPath(index);
-                      audioElement.load();
+                      
+                      // Show error message instead of using fallback
+                      const errorContainer = audioElement.parentElement;
+                      if (errorContainer) {
+                        const errorMessage = document.createElement('div');
+                        errorMessage.className = 'text-red-500 text-sm mt-2';
+                        errorMessage.textContent = 'Error loading audio from backend. Please try regenerating.';
+                        
+                        // Remove any existing error messages
+                        const existingError = errorContainer.querySelector('.text-red-500');
+                        if (existingError) {
+                          errorContainer.removeChild(existingError);
+                        }
+                        
+                        errorContainer.appendChild(errorMessage);
+                      }
                     }}
                   ></audio>
                   <div>
@@ -243,7 +242,7 @@ export default function AssetSection({
                   )}
                   <video
                     controls
-                    src={usingFallbackVideo ? getLocalVideoPath(index) : (video.fileId ? `/api/video-proxy?fileId=${video.fileId}` : video.src)}
+                    src={video.fileId ? `/api/video-proxy?fileId=${video.fileId}` : video.src}
                     className="w-full rounded-md"
                     crossOrigin="anonymous"
                     preload="auto"
@@ -255,20 +254,37 @@ export default function AssetSection({
                           mediaRefs.current.push(el);
                           
                           // Set the source directly using a different approach
-                          if (usingFallbackVideo) {
-                            el.src = getLocalVideoPath(index);
-                          } else if (video.fileId) {
+                          if (video.fileId) {
                             el.src = `/api/video-proxy?fileId=${video.fileId}`;
+                          } else if (video.directDownloadUrl) {
+                            el.src = video.directDownloadUrl;
+                          } else if (video.src) {
+                            el.src = video.src;
                           }
                         }
                       }
                     }}
                     onPlay={handleMediaPlay}
                     onError={(e) => {
-                      // If there's an error, switch to the local video file
+                      // Log error but don't use fallback
+                      console.error('Error loading video:', e);
                       const videoElement = e.currentTarget;
-                      videoElement.src = getLocalVideoPath(index);
-                      videoElement.load();
+                      
+                      // Show error message instead of using fallback
+                      const errorContainer = videoElement.parentElement;
+                      if (errorContainer) {
+                        const errorMessage = document.createElement('div');
+                        errorMessage.className = 'text-red-500 text-sm mt-2';
+                        errorMessage.textContent = 'Error loading video from backend. Please try regenerating.';
+                        
+                        // Remove any existing error messages
+                        const existingError = errorContainer.querySelector('.text-red-500');
+                        if (existingError) {
+                          errorContainer.removeChild(existingError);
+                        }
+                        
+                        errorContainer.appendChild(errorMessage);
+                      }
                     }}
                   ></video>
                   <div className="mt-2">
