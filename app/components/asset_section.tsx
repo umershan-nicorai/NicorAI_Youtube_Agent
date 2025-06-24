@@ -23,6 +23,9 @@ export default function AssetSection({
   handleApproveAssets,
   setMediaGenerated
 }: AssetSectionProps) {
+  // Debug log to check if thumbnails are present
+  console.log('AssetSection generatedMedia:', generatedMedia);
+  
   // Remove fallback state variables since we don't want automatic fallbacks
   
   // Remove the useEffect that was setting fallback flags
@@ -88,6 +91,26 @@ export default function AssetSection({
         </button>
         <h2 className="text-2xl font-bold text-white mb-4">Assets from the script</h2>
         
+        {/* Thumbnails section */}
+        {generatedMedia.thumbnails && generatedMedia.thumbnails.length > 0 && (
+          <div className="mb-8">
+            <h3 className="text-xl font-bold text-white mb-4">Thumbnails <span className="text-gray-400 text-sm">({generatedMedia.thumbnails.length})</span></h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {generatedMedia.thumbnails.map((thumbnail: any, index: number) => (
+                <div key={index} className="bg-gray-700 rounded-lg overflow-hidden shadow-md">
+                  <img src={thumbnail.src} alt={thumbnail.alt} className="w-full h-48 object-cover" crossOrigin="anonymous" />
+                  <div className="p-4">
+                    <p className="text-white font-semibold flex items-center gap-2">
+                      {thumbnail.alt}
+                    </p>
+                    <p className="text-gray-400 text-sm mt-1">{thumbnail.date}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Images section */}
         {generatedMedia.images && generatedMedia.images.length > 0 && (
           <div className="mb-8">

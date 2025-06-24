@@ -9,6 +9,7 @@ interface FormData {
   topic: string
   tone: 'Professional' | 'Casual' | 'Funny'
   genre: 'Educational' | 'Entertainment' | 'Tutorial'
+  time: string
 }
 
 export default function Home() {
@@ -16,6 +17,7 @@ export default function Home() {
     topic: '',
     tone: 'Professional',
     genre: 'Educational',
+    time: '20',
   })
   const [script, setScript] = useState('')
   const [editedScript, setEditedScript] = useState('')
@@ -376,6 +378,19 @@ export default function Home() {
                 alt: file.name, 
                 name: file.name, 
                 liked: false 
+              };
+            }),
+            thumbnails: responseFiles.filter((file: any) => file && file.type === 'thumbnail').map((file: any) => {
+              const fileId = extractGoogleDriveFileId(file.url);
+              const srcUrl = fileId ? getProxyUrl(fileId, 'image') : file.url;
+              return {
+                src: srcUrl,
+                originalUrl: file.url,
+                fileId: fileId,
+                directDownloadUrl: fileId ? getDirectDownloadUrl(fileId) : null,
+                alt: file.name,
+                name: file.name,
+                liked: false
               };
             }),
             audio: responseFiles.filter((file: any) => file && file.type === 'music').map((file: any) => {

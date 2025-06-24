@@ -4,6 +4,7 @@ interface FormData {
   topic: string
   tone: 'Professional' | 'Casual' | 'Funny'
   genre: 'Educational' | 'Entertainment' | 'Tutorial'
+  time: string
 }
 
 interface TopicSectionProps {
@@ -31,6 +32,19 @@ export default function TopicSection({ formData, setFormData, handleSubmit, isLo
             className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-700 text-white shadow-sm focus:border-red-500 focus:ring-red-500 px-3 py-2"
             required
           />
+        </div>
+        <div>
+          <label htmlFor="time" className="block text-sm font-medium text-gray-300 mb-1">Time Preference <span className="text-red-500">*</span></label>
+          <input
+            type="text"
+            id="time"
+            placeholder="Enter time (e.g., 10 minutes or 1 hour)"
+            value={formData.time}
+            onChange={(e) => setFormData({ ...formData, time: e.target.value })}
+            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-700 text-white shadow-sm focus:border-red-500 focus:ring-red-500 px-3 py-2"
+            required
+          />
+          <span className="text-xs text-gray-400">Please specify minutes or hours (e.g., "10 minutes" or "1 hour")</span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -63,9 +77,16 @@ export default function TopicSection({ formData, setFormData, handleSubmit, isLo
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full bg-red-600 text-white py-3 px-4 rounded-full hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 font-semibold text-lg transition-colors duration-200"
+          className="w-full bg-red-600 text-white py-3 px-4 rounded-full hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 font-semibold text-lg transition-colors duration-200 flex items-center justify-center gap-2"
         >
-          {isLoading ? 'Generating...' : 'Generate Script'}
+          {isLoading ? (
+            <>
+              <span className="inline-block w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+              Generating...
+            </>
+          ) : (
+            'Generate Script'
+          )}
         </button>
       </form>
     </div>
