@@ -40,6 +40,10 @@ export default function Home() {
   const [showSuccessMessage, setShowSuccessMessage] = useState(false)
   const [successProgress, setSuccessProgress] = useState(0)
   const [loadingProgress, setLoadingProgress] = useState(0)
+  const [localImages, setLocalImages] = useState<any[]>([])
+  const [localAudio, setLocalAudio] = useState<any[]>([])
+  const [localVideos, setLocalVideos] = useState<any[]>([])
+  const [localThumbnails, setLocalThumbnails] = useState<any[]>([])
   
   const extractGoogleDriveFileId = (url: string) => {
     if (!url) return null;
@@ -76,7 +80,7 @@ export default function Home() {
     return `https://docs.google.com/uc?export=download&id=${fileId}`;
   };
 
-  const handleRegenerateMedia = async (type: 'images' | 'audio' | 'videos', index: number) => {
+  const handleRegenerateMedia = async (type: 'images' | 'audio' | 'videos', index: number, feedback?: string) => {
     setRegeneratingAsset({ type, index });
     const asset = generatedMedia[type][index];
     
@@ -109,7 +113,8 @@ export default function Home() {
       name: asset.name || asset.alt,
       type: getBackendType(type),
       originalUrl: asset.originalUrl || asset.src, // Include original URL if available
-      fileId: asset.fileId // Include file ID if available
+      fileId: asset.fileId, // Include file ID if available
+      feedback: feedback || ''
     };
     
     console.log('Payload being sent to backend:', payload);
@@ -370,14 +375,14 @@ export default function Home() {
             images: responseFiles.filter((file: any) => file && file.type === 'image').map((file: any) => {
               const fileId = extractGoogleDriveFileId(file.url);
               const srcUrl = fileId ? getProxyUrl(fileId, 'image') : file.url;
-              return { 
-                src: srcUrl, 
+              return {
+                src: srcUrl,
                 originalUrl: file.url,
                 fileId: fileId,
                 directDownloadUrl: fileId ? getDirectDownloadUrl(fileId) : null,
-                alt: file.name, 
-                name: file.name, 
-                liked: false 
+                alt: file.name,
+                name: file.name,
+                liked: false
               };
             }),
             thumbnails: responseFiles.filter((file: any) => file && file.type === 'thumbnail').map((file: any) => {
@@ -396,27 +401,27 @@ export default function Home() {
             audio: responseFiles.filter((file: any) => file && file.type === 'music').map((file: any) => {
               const fileId = extractGoogleDriveFileId(file.url);
               const srcUrl = fileId ? getProxyUrl(fileId, 'audio') : file.url;
-              return { 
-                src: srcUrl, 
+              return {
+                src: srcUrl,
                 originalUrl: file.url,
                 fileId: fileId,
                 directDownloadUrl: fileId ? getDirectDownloadUrl(fileId) : null,
-                name: file.name, 
-                liked: false 
+                name: file.name,
+                liked: false
               };
             }),
             videos: responseFiles.filter((file: any) => file && file.type === 'visual').map((file: any) => {
               const fileId = extractGoogleDriveFileId(file.url);
               const srcUrl = fileId ? getProxyUrl(fileId, 'video') : file.url;
-              return { 
-                src: srcUrl, 
+              return {
+                src: srcUrl,
                 originalUrl: file.url,
                 fileId: fileId,
                 directDownloadUrl: fileId ? getDirectDownloadUrl(fileId) : null,
-                name: file.name, 
-                liked: false 
+                name: file.name,
+                liked: false
               };
-            }),
+            })
           };
           
           console.log("Generated media object:", {
@@ -519,43 +524,32 @@ export default function Home() {
     setIsApprovingAssets(true);
     try {
       // Format the media data into a single array
-      const allMedia = [
-        ...generatedMedia.images?.map((img: any, index: number) => ({
-          asset: img,
-          type: 'image',
-          originalIndex: index
-        })) || [],
-        ...generatedMedia.audio?.map((audio: any, index: number) => ({
-          asset: audio,
-          type: 'music', // Using 'music' instead of 'audio' to match the desired format
-          originalIndex: index + (generatedMedia.images?.length || 0)
-        })) || [],
-        ...generatedMedia.videos?.map((video: any, index: number) => ({
-          asset: video,
-          type: 'visual', // Using 'visual' instead of 'video' to match the desired format
-          originalIndex: index + (generatedMedia.images?.length || 0) + (generatedMedia.audio?.length || 0)
-        })) || []
+      const allImages = [
+        ...(generatedMedia.images?.map((img: any) => ({ ...img, type: 'image', status: img.status || 'approved' })) || []),
+        ...(localImages.map((img: any) => ({ ...img, type: 'image', status: 'approved' })) || [])
       ];
-
+      const allAudio = [
+        ...(generatedMedia.audio?.map((audio: any) => ({ ...audio, type: 'music', status: audio.status || 'approved' })) || []),
+        ...(localAudio.map((audio: any) => ({ ...audio, type: 'music', status: 'approved' })) || [])
+      ];
+      const allVideos = [
+        ...(generatedMedia.videos?.map((video: any) => ({ ...video, type: 'visual', status: video.status || 'approved' })) || []),
+        ...(localVideos.map((video: any) => ({ ...video, type: 'visual', status: 'approved' })) || [])
+      ];
+      const allThumbnails = [
+        ...(generatedMedia.thumbnails?.map((thumb: any) => ({ ...thumb, type: 'thumbnail', status: thumb.status || 'approved' })) || []),
+        ...(localThumbnails.map((thumb: any) => ({ ...thumb, type: 'thumbnail', status: 'approved' })) || [])
+      ];
+      const allMedia = [...allImages, ...allAudio, ...allVideos, ...allThumbnails];
       const totalItems = allMedia.length;
-
-      // Transform into the desired format
-      const formattedMedia = allMedia
-        .map((item: any, index: number) => {
-          if (!item.asset.originalUrl) {
-            console.warn(`Asset missing originalUrl:`, item.asset);
-            return null;
-          }
-          return {
-            id: index + 1,
-            type: item.type,
-            description: item.asset.name || item.asset.alt || `${item.type} content`,
-            originalIndex: item.originalIndex,
-            totalItems: totalItems,
-            url: item.asset.originalUrl // Keep the URL for backend processing
-          };
-        })
-        .filter(Boolean);
+      const formattedMedia = allMedia.map((item: any, index: number) => ({
+        id: index + 1,
+        type: item.type,
+        description: item.name || item.alt || `${item.type} content`,
+        status: item.status,
+        url: item.originalUrl || item.src,
+        totalItems: totalItems
+      }));
 
       // Log the raw media data for debugging
       console.log('Raw media data:', JSON.stringify(generatedMedia, null, 2));
@@ -564,7 +558,7 @@ export default function Home() {
       // Transform the media array into the expected format
       const payload = {
         content: script,
-        media: formattedMedia, // This is now a flat array of media items
+        media: formattedMedia,
         responseId,
         timestamp: responseTimestamp,
         status: 'approved',
@@ -631,6 +625,14 @@ export default function Home() {
           handleMediaPlay={handleMediaPlay}
           handleApproveAssets={handleApproveAssets}
           setMediaGenerated={setMediaGenerated}
+          localImages={localImages}
+          setLocalImages={setLocalImages}
+          localAudio={localAudio}
+          setLocalAudio={setLocalAudio}
+          localVideos={localVideos}
+          setLocalVideos={setLocalVideos}
+          localThumbnails={localThumbnails}
+          setLocalThumbnails={setLocalThumbnails}
         />
       ) : !hasScript ? (
         <TopicSection 

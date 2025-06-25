@@ -69,11 +69,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Forward the request to the n8n webhook with timeout
+    // Forward the request to the n8n webhook WITHOUT timeout
     console.log('Sending request to n8n webhook:', JSON.stringify(payload));
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-    
     try {
       const response = await fetch('https://n8n.srv810314.hstgr.cloud/webhook/media-regenerate', {
         method: 'POST',
@@ -83,10 +80,8 @@ export async function POST(request: NextRequest) {
           'User-Agent': 'NextJS-API-Client',
         },
         body: JSON.stringify(payload),
-        signal: controller.signal,
+        // No signal, so no timeout
       });
-      
-      clearTimeout(timeoutId);
 
       console.log('Response status from n8n:', response.status);
       console.log('Response headers:', Object.fromEntries(response.headers.entries()));
@@ -153,7 +148,6 @@ export async function POST(request: NextRequest) {
         },
       });
     } catch (fetchError) {
-      clearTimeout(timeoutId);
       console.error('Fetch error:', fetchError);
       
       const errorMessage = fetchError.name === 'AbortError' 

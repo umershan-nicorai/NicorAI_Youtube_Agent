@@ -35,16 +35,33 @@ export default function TopicSection({ formData, setFormData, handleSubmit, isLo
         </div>
         <div>
           <label htmlFor="time" className="block text-sm font-medium text-gray-300 mb-1">Time Preference <span className="text-red-500">*</span></label>
-          <input
-            type="text"
-            id="time"
-            placeholder="Enter time (e.g., 10 minutes or 1 hour)"
-            value={formData.time}
-            onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-            className="mt-1 block w-full rounded-md border border-gray-600 bg-gray-700 text-white shadow-sm focus:border-red-500 focus:ring-red-500 px-3 py-2"
-            required
-          />
-          <span className="text-xs text-gray-400">Please specify minutes or hours (e.g., "10 minutes" or "1 hour")</span>
+          <div className="flex gap-2 items-center mt-1">
+            <input
+              type="number"
+              id="time-number"
+              min="1"
+              value={parseInt(formData.time) || ''}
+              onChange={e => {
+                const unit = formData.time.includes('hr') ? 'hrs' : 'minutes';
+                setFormData({ ...formData, time: `${e.target.value} ${unit}` });
+              }}
+              className="block w-32 rounded-md border border-gray-600 bg-gray-700 text-white shadow-sm focus:border-red-500 focus:ring-red-500 px-3 py-2"
+              required
+            />
+            <select
+              id="time-unit"
+              value={formData.time.includes('hr') ? 'hrs' : 'minutes'}
+              onChange={e => {
+                const num = parseInt(formData.time) || '';
+                setFormData({ ...formData, time: `${num} ${e.target.value}` });
+              }}
+              className="block rounded-md border border-gray-600 bg-gray-700 text-white shadow-sm focus:border-red-500 focus:ring-red-500 px-3 py-2"
+            >
+              <option value="minutes">minutes</option>
+              <option value="hrs">hrs</option>
+            </select>
+          </div>
+          <span className="text-xs text-gray-400">Please specify minutes or hours (e.g., "10 minutes" or "1 hr")</span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
