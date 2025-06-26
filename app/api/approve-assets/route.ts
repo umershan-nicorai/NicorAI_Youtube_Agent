@@ -27,6 +27,7 @@ export async function POST(request: Request) {
     const payload = {
       content: data.content,
       media: data.media, // Keep the flat array structure
+      Uploaded_media: data.Uploaded_media, // Forward Uploaded_media if present
       responseId: data.responseId,
       timestamp: data.timestamp,
       status: 'approved',

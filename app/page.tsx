@@ -542,23 +542,56 @@ export default function Home() {
       ];
       const allMedia = [...allImages, ...allAudio, ...allVideos, ...allThumbnails];
       const totalItems = allMedia.length;
-      const formattedMedia = allMedia.map((item: any, index: number) => ({
-        id: index + 1,
-        type: item.type,
-        description: item.name || item.alt || `${item.type} content`,
-        status: item.status,
-        url: item.originalUrl || item.src,
-        totalItems: totalItems
-      }));
 
-      // Log the raw media data for debugging
-      console.log('Raw media data:', JSON.stringify(generatedMedia, null, 2));
-      console.log('Formatted media data:', JSON.stringify(formattedMedia, null, 2));
+      // Build Uploaded_media array from all manually uploaded media
+      const uploadedMedia = [
+        ...localImages.map((img: any, index: number) => ({
+          ...img,
+          type: 'image',
+          url: img.src.split(',')[1] || img.src,
+          id: index + 1,
+          totalItems: localImages.length
+        })),
+        ...localAudio.map((audio: any, index: number) => ({
+          ...audio,
+          type: 'music',
+          url: audio.src.split(',')[1] || audio.src,
+          id: index + 1,
+          totalItems: localAudio.length
+        })),
+        ...localVideos.map((video: any, index: number) => ({
+          ...video,
+          type: 'visual',
+          url: video.src.split(',')[1] || video.src,
+          id: index + 1,
+          totalItems: localVideos.length
+        })),
+        ...localThumbnails.map((thumb: any, index: number) => ({
+          ...thumb,
+          type: 'thumbnail',
+          url: thumb.src.split(',')[1] || thumb.src,
+          id: index + 1,
+          totalItems: localThumbnails.length
+        })),
+      ];
+
+      // Build main media array for only generated media
+      const generatedMediaArray = allMedia
+        .filter((item: any) => !item.isBase64)
+        .map((item: any, index: number) => ({
+          id: index + 1,
+          type: item.type,
+          description: item.name || item.alt || `${item.type} content`,
+          status: item.status,
+          url: item.originalUrl || item.src,
+          totalItems: allMedia.length
+        }));
 
       // Transform the media array into the expected format
       const payload = {
         content: script,
-        media: formattedMedia,
+        media: generatedMediaArray,
+        Uploaded_media: uploadedMedia,
         responseId,
         timestamp: responseTimestamp,
         status: 'approved',

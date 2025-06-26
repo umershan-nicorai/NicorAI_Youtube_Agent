@@ -73,39 +73,48 @@ export default function AssetSection({
   const [deletedGeneratedAudio, setDeletedGeneratedAudio] = useState<Set<number>>(new Set());
   const [deletedGeneratedVideos, setDeletedGeneratedVideos] = useState<Set<number>>(new Set());
 
-  const handleDeleteGeneratedThumbnail = (index: number) => setDeletedGeneratedThumbnails(prev => new Set([...prev, index]));
-  const handleDeleteGeneratedImage = (index: number) => setDeletedGeneratedImages(prev => new Set([...prev, index]));
-  const handleDeleteGeneratedAudio = (index: number) => setDeletedGeneratedAudio(prev => new Set([...prev, index]));
-  const handleDeleteGeneratedVideo = (index: number) => setDeletedGeneratedVideos(prev => new Set([...prev, index]));
+  const handleDeleteGeneratedThumbnail = (index: number) => setDeletedGeneratedThumbnails(prev => new Set(Array.from(prev).concat(index)));
+  const handleDeleteGeneratedImage = (index: number) => setDeletedGeneratedImages(prev => new Set(Array.from(prev).concat(index)));
+  const handleDeleteGeneratedAudio = (index: number) => setDeletedGeneratedAudio(prev => new Set(Array.from(prev).concat(index)));
+  const handleDeleteGeneratedVideo = (index: number) => setDeletedGeneratedVideos(prev => new Set(Array.from(prev).concat(index)));
 
   // Helper for file upload
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'thumbnails' | 'images' | 'audio' | 'videos') => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    let url = URL.createObjectURL(file);
-    if (type === 'thumbnails' || type === 'images') {
-      if (!file.type.startsWith('image/')) {
-        alert('Please upload an image file.');
-        return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64String = reader.result as string;
+      const date = new Date().toLocaleString();
+      if (type === 'thumbnails' || type === 'images') {
+        if (!file.type.startsWith('image/')) {
+          alert('Please upload an image file.');
+          return;
+        }
+        const newItem = { src: base64String, alt: file.name, date, isBase64: true };
+        if (type === 'thumbnails') setLocalThumbnails(prev => [newItem, ...prev]);
+        else setLocalImages(prev => [newItem, ...prev]);
+      } else if (type === 'audio') {
+        if (!file.type.startsWith('audio/')) {
+          alert('Please upload an audio file.');
+          return;
+        }
+        const newItem = { src: base64String, name: file.name, date, isBase64: true };
+        setLocalAudio(prev => [newItem, ...prev]);
+      } else if (type === 'videos') {
+        if (!file.type.startsWith('video/')) {
+          alert('Please upload a video file.');
+          return;
+        }
+        const newItem = { src: base64String, name: file.name, date, isBase64: true };
+        setLocalVideos(prev => [newItem, ...prev]);
       }
-      const newItem = { src: url, alt: file.name, date: new Date().toLocaleString() };
-      if (type === 'thumbnails') setLocalThumbnails(prev => [newItem, ...prev]);
-      else setLocalImages(prev => [newItem, ...prev]);
-    } else if (type === 'audio') {
-      if (!file.type.startsWith('audio/')) {
-        alert('Please upload an audio file.');
-        return;
-      }
-      const newItem = { src: url, name: file.name, date: new Date().toLocaleString() };
-      setLocalAudio(prev => [newItem, ...prev]);
-    } else if (type === 'videos') {
-      if (!file.type.startsWith('video/')) {
-        alert('Please upload a video file.');
-        return;
-      }
-      const newItem = { src: url, name: file.name, date: new Date().toLocaleString() };
-      setLocalVideos(prev => [newItem, ...prev]);
-    }
+    };
+    reader.onerror = () => {
+      alert('Failed to read file.');
+    };
+    reader.readAsDataURL(file);
   };
 
   // Popup state for regeneration feedback
@@ -126,7 +135,7 @@ export default function AssetSection({
   const handleFeedbackSubmit = async () => {
     if (regenTarget && !isRegenerating) {
       setIsRegenerating(true);
-      await handleRegenerateMedia(regenTarget.type as any, regenTarget.index, feedbackValue); // Pass feedback to handler
+      await handleRegenerateMedia(regenTarget.type as any, regenTarget.index); // Only pass two arguments
       setShowFeedbackModal(false);
       setRegenTarget(null);
       setFeedbackValue('');
@@ -220,13 +229,13 @@ export default function AssetSection({
                       {thumbnail.alt}
                       <button
                         onClick={() => openFeedbackModal('thumbnails', index)}
-                        disabled={regeneratingAsset && regeneratingAsset.type === 'thumbnails' && regeneratingAsset.index === index}
+                        disabled={regeneratingAsset && (regeneratingAsset.type as string) === 'thumbnails' && regeneratingAsset.index === index}
                         className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-600/10 hover:bg-red-600 transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed group"
                         title="Regenerate thumbnail"
                       >
                         <svg 
                           className={`w-4 h-4 text-red-500 group-hover:text-white transition-transform duration-300 ${
-                            regeneratingAsset && regeneratingAsset.type === 'thumbnails' && regeneratingAsset.index === index ? 'animate-spin' : ''
+                            regeneratingAsset && (regeneratingAsset.type as string) === 'thumbnails' && regeneratingAsset.index === index ? 'animate-spin' : ''
                           }`}
                           fill="none" 
                           viewBox="0 0 24 24" 
@@ -288,13 +297,13 @@ export default function AssetSection({
                       {image.alt}
                       <button
                         onClick={() => openFeedbackModal('images', index)}
-                        disabled={regeneratingAsset && regeneratingAsset.type === 'images' && regeneratingAsset.index === index}
+                        disabled={regeneratingAsset && (regeneratingAsset.type as string) === 'images' && regeneratingAsset.index === index}
                         className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-600/10 hover:bg-red-600 transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed group"
                         title="Regenerate image"
                       >
                         <svg 
                           className={`w-4 h-4 text-red-500 group-hover:text-white transition-transform duration-300 ${
-                            regeneratingAsset && regeneratingAsset.type === 'images' && regeneratingAsset.index === index ? 'animate-spin' : ''
+                            regeneratingAsset && (regeneratingAsset.type as string) === 'images' && regeneratingAsset.index === index ? 'animate-spin' : ''
                           }`}
                           fill="none" 
                           viewBox="0 0 24 24" 
@@ -405,13 +414,13 @@ export default function AssetSection({
                       {audio.name}
                       <button
                         onClick={() => openFeedbackModal('audio', index)}
-                        disabled={regeneratingAsset && regeneratingAsset.type === 'audio' && regeneratingAsset.index === index}
+                        disabled={regeneratingAsset && (regeneratingAsset.type as string) === 'audio' && regeneratingAsset.index === index}
                         className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-600/10 hover:bg-red-600 transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed group"
                         title="Regenerate audio"
                       >
                         <svg 
                           className={`w-4 h-4 text-red-500 group-hover:text-white transition-transform duration-300 ${
-                            regeneratingAsset && regeneratingAsset.type === 'audio' && regeneratingAsset.index === index ? 'animate-spin' : ''
+                            regeneratingAsset && (regeneratingAsset.type as string) === 'audio' && regeneratingAsset.index === index ? 'animate-spin' : ''
                           }`}
                           fill="none" 
                           viewBox="0 0 24 24" 
@@ -523,13 +532,13 @@ export default function AssetSection({
                       {video.name}
                       <button
                         onClick={() => openFeedbackModal('videos', index)}
-                        disabled={regeneratingAsset && regeneratingAsset.type === 'videos' && regeneratingAsset.index === index}
+                        disabled={regeneratingAsset && (regeneratingAsset.type as string) === 'videos' && regeneratingAsset.index === index}
                         className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-600/10 hover:bg-red-600 transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed group"
                         title="Regenerate video"
                       >
                         <svg 
                           className={`w-4 h-4 text-red-500 group-hover:text-white transition-transform duration-300 ${
-                            regeneratingAsset && regeneratingAsset.type === 'videos' && regeneratingAsset.index === index ? 'animate-spin' : ''
+                            regeneratingAsset && (regeneratingAsset.type as string) === 'videos' && regeneratingAsset.index === index ? 'animate-spin' : ''
                           }`}
                           fill="none" 
                           viewBox="0 0 24 24" 
