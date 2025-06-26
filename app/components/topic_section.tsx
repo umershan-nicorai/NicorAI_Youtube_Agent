@@ -99,7 +99,7 @@ export default function TopicSection({ formData, setFormData, handleSubmit, isLo
           {isLoading ? (
             <>
               <span className="inline-block w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-              Generating...
+              Generating....
             </>
           ) : (
             'Generate Script'
