@@ -530,11 +530,27 @@ export default function Home() {
       ];
       const allAudio = [
         ...(generatedMedia.audio?.map((audio: any) => ({ ...audio, type: 'music', status: audio.status || 'approved' })) || []),
-        ...(localAudio.map((audio: any) => ({ ...audio, type: 'music', status: 'approved' })) || [])
+        ...(localAudio.map((audio: any, index: number) => ({
+          ...audio,
+          type: 'music',
+          url: audio.src.split(',')[1] || audio.src,
+          id: index + 1,
+          totalItems: localAudio.length,
+          name: audio.name,
+          mimeType: audio.mimeType
+        })) || []),
       ];
       const allVideos = [
         ...(generatedMedia.videos?.map((video: any) => ({ ...video, type: 'visual', status: video.status || 'approved' })) || []),
-        ...(localVideos.map((video: any) => ({ ...video, type: 'visual', status: 'approved' })) || [])
+        ...(localVideos.map((video: any, index: number) => ({
+          ...video,
+          type: 'visual',
+          url: video.src.split(',')[1] || video.src,
+          id: index + 1,
+          totalItems: localVideos.length,
+          name: video.name,
+          mimeType: video.mimeType
+        })) || [])
       ];
       const allThumbnails = [
         ...(generatedMedia.thumbnails?.map((thumb: any) => ({ ...thumb, type: 'thumbnail', status: thumb.status || 'approved' })) || []),
@@ -557,14 +573,18 @@ export default function Home() {
           type: 'music',
           url: audio.src.split(',')[1] || audio.src,
           id: index + 1,
-          totalItems: localAudio.length
+          totalItems: localAudio.length,
+          name: audio.name,
+          mimeType: audio.mimeType
         })),
         ...localVideos.map((video: any, index: number) => ({
           ...video,
           type: 'visual',
           url: video.src.split(',')[1] || video.src,
           id: index + 1,
-          totalItems: localVideos.length
+          totalItems: localVideos.length,
+          name: video.name,
+          mimeType: video.mimeType
         })),
         ...localThumbnails.map((thumb: any, index: number) => ({
           ...thumb,

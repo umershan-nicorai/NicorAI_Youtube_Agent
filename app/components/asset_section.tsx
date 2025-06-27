@@ -100,14 +100,14 @@ export default function AssetSection({
           alert('Please upload an audio file.');
           return;
         }
-        const newItem = { src: base64String, name: file.name, date, isBase64: true };
+        const newItem = { src: base64String, name: file.name, mimeType: file.type, date, isBase64: true };
         setLocalAudio(prev => [newItem, ...prev]);
       } else if (type === 'videos') {
         if (!file.type.startsWith('video/')) {
           alert('Please upload a video file.');
           return;
         }
-        const newItem = { src: base64String, name: file.name, date, isBase64: true };
+        const newItem = { src: base64String, name: file.name, mimeType: file.type, date, isBase64: true };
         setLocalVideos(prev => [newItem, ...prev]);
       }
     };
