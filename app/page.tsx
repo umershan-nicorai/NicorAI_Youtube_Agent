@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import TopicSection from './components/topic_section'
 import ScriptSection from './components/script_section'
 import AssetSection from './components/asset_section'
+import { useRouter } from 'next/navigation'
 
 interface FormData {
   topic: string
@@ -44,6 +45,7 @@ export default function Home() {
   const [localAudio, setLocalAudio] = useState<any[]>([])
   const [localVideos, setLocalVideos] = useState<any[]>([])
   const [localThumbnails, setLocalThumbnails] = useState<any[]>([])
+  const router = useRouter()
   
   const extractGoogleDriveFileId = (url: string) => {
     if (!url) return null;
@@ -656,7 +658,7 @@ export default function Home() {
       }
 
       console.log('Assets approved successfully:', data);
-      setShowSuccessMessage(true);
+      router.push('/success');
     } catch (error) {
       console.error('Error approving assets:', error);
       alert(`Error approving assets: ${error.message}`);

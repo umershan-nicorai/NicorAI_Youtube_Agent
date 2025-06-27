@@ -565,11 +565,19 @@ export default function AssetSection({
           <button
             onClick={handleApproveAssets}
             disabled={isApprovingAssets}
-            className={`bg-green-600 text-white py-3 px-6 rounded-full hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 font-semibold text-lg transition-colors duration-200 ${
+            className={`bg-green-600 text-white py-3 px-8 rounded-full font-semibold text-lg transition-colors duration-200 flex items-center justify-center gap-2 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 mx-auto ${
               isApprovingAssets ? 'opacity-50 cursor-not-allowed' : ''
             }`}
+            type="button"
           >
-            {isApprovingAssets ? 'Approving...' : 'Approve Assets'}
+            {isApprovingAssets ? (
+              <>
+                <span className="inline-block w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                Approving...
+              </>
+            ) : (
+              'Approve Assets'
+            )}
           </button>
         </div>
       </div>
