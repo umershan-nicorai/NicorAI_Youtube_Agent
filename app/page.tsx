@@ -658,7 +658,12 @@ export default function Home() {
       }
 
       console.log('Assets approved successfully:', data);
-      router.push('/success');
+      // If backend returns a path, redirect with it as a query param
+      if (data.path) {
+        router.push(`/success?driveLink=${encodeURIComponent(data.path)}`);
+      } else {
+        router.push('/success');
+      }
     } catch (error) {
       console.error('Error approving assets:', error);
       alert(`Error approving assets: ${error.message}`);

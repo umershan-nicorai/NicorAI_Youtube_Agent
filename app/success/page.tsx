@@ -1,8 +1,12 @@
 'use client';
 import React from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 
 export default function SuccessPage() {
+  const searchParams = useSearchParams();
+  const driveLink = searchParams.get('driveLink');
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-white p-8">
       <div className="relative bg-gray-800/90 rounded-2xl shadow-2xl p-12 border border-gray-700 flex flex-col items-center max-w-xl w-full animate-fade-in">
@@ -17,14 +21,18 @@ export default function SuccessPage() {
         <p className="text-xl mb-8 text-gray-200 text-center font-medium">Your media assets have been <span className="text-red-400 font-bold">successfully approved</span> and uploaded.</p>
         <div className="bg-gray-700/80 rounded-lg p-6 mb-6 w-full text-center shadow-md">
           <p className="mb-3 text-lg text-gray-100 font-semibold">Your Google Drive Link:</p>
-          <a
-            href="#"
-            className="inline-block px-6 py-3 rounded-full bg-gradient-to-r from-red-600 to-red-400 text-white font-bold text-lg shadow-lg hover:scale-105 hover:from-red-700 hover:to-red-500 transition-all duration-200"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            🎬 Click here to view your media (dummy link)
-          </a>
+          {driveLink ? (
+            <a
+              href={driveLink}
+              className="inline-block px-6 py-3 rounded-full bg-gradient-to-r from-red-600 to-red-400 text-white font-bold text-lg shadow-lg hover:scale-105 hover:from-red-700 hover:to-red-500 transition-all duration-200"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              🎬 Click here to view your media
+            </a>
+          ) : (
+            <span className="text-gray-400">No Drive link available.</span>
+          )}
         </div>
         <Link href="/" className="mt-2 text-base text-red-300 hover:text-red-400 underline font-semibold transition-colors duration-200">Back to Home</Link>
       </div>
